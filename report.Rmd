@@ -1,0 +1,101 @@
+---
+title: 'Practical Machine Learning: Course Project'
+author: "Ferran Martí"
+date: "Monday, June 08, 2015"
+output: html_document
+---
+
+###INTRODUCTION
+
+There are certain devices that allow people to collect certain amount of data about personal activity. In this project, we will use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants to predict the manner in which they did the exercise. The training data for this project are available here:
+         https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+The test data are available here:
+         https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+         
+### LOADING THE DATA
+
+First, we load the data in the memory (assuming you have the csv files already in your computer, downloaded from the links provided above):
+```{r}
+test.initial <- read.csv("C:/Users/ftorrent/Desktop/Data Science Track1/Coursera/Practical Machine Learning/pml-testing.csv", na.strings=c("NA","#DIV/0!",""))
+
+train.initial <-read.csv("C:/Users/ftorrent/Desktop/Data Science Track1/Coursera/Practical Machine Learning/pml-training.csv", na.strings=c("NA","#DIV/0!",""))
+```
+
+Now, you need to load certain packages for the reproduction of the code to work:
+```{r,echo=FALSE}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(dplyr)
+library(rattle)
+```
+
+### CLEANING THE DATA
+First, we remove columns that have NA values on them. As we can see, this way we reduce the amount of variables from 160 to 60, thus reducing the dataset (and the computation work) considerably.
+```{r}
+train.initial <- train.initial[, colSums(is.na(train.initial)) == 0] 
+test.initial <- test.initial[, colSums(is.na(test.initial)) == 0]
+```
+
+Now, we delete those variables that are related to time (timestamp) as well as the X variable (which is the number of the row, basically) and the "window" variable, which is only a counting of the series and has nothing to do with the exercise per se:
+```{r}
+test.clean<-select(test.initial, -X, -cvtd_timestamp, -raw_timestamp_part_1, -raw_timestamp_part_2, -new_window, -num_window)
+train.clean<-select(train.initial, -X, -cvtd_timestamp, -raw_timestamp_part_1, -raw_timestamp_part_2, -new_window, -num_window)
+```
+So we have a training dataset of 19622 observations and 54 variables, and a test dataset of 20 observations and 54 variables as well.
+
+The variable output is "classe", which has 5 levels: A, B, C, D and E.
+
+### SLICING THE DATA
+Now we split the cleaned training set into a pure training data set (70%) and a validation data set (30%). We will use the validation data set to conduct cross validation later on. We also set up a set.seed for reproducible purposes:
+
+```{r}
+set.seed(13475)
+inTrain <- createDataPartition(train.clean$classe, p=0.70, list=FALSE)
+training<-train.clean[inTrain, ]
+testing<-train.clean[-inTrain, ]
+```
+
+### DATA MODELLING
+For this kind of datasets, I believe the best predictive algorithm to use is the Random Forest, as it automatically selects the most important variables, and is robust to outliers in general. I will use a 5-fold cross validation when applying the algorithm, as it is kind of the standard procedure.
+
+```{r}
+controlRf<-trainControl(method="cv", 5)
+modelRf <- train(classe ~ ., data=training, method="rf", trControl=controlRf, ntree=250)
+modelRf
+```
+
+Now we have to estimate the performance of the algorithm in our validation data set.
+```{r}
+validationRf<-predict(modelRf, testing)
+confusionMatrix(testing$classe, validationRf)
+```
+
+### Accuracy and out of sample error.
+```{r}
+accuracy<-postResample(validationRf, testing$classe)
+accuracy
+```
+```{r}
+outofsampleerror <- 1 - as.numeric(confusionMatrix(testing$classe, validationRf)$overall[1])
+outofsampleerror
+```
+
+Therefore, we have a 99.4% accuracy and 0.56% out of sample error.
+
+### Prediction with the test dataset.
+```{r}
+result <- predict(modelRf, test.clean[, -length(names(test.clean))])
+result
+```
+
+So the observations in the test dataset should be labelled as above.
+```{r}
+treeModel <- rpart(classe ~ ., data=training, method="class")
+prp(treeModel)
+```
+
+
+Finally, we have a fast plot of the algorithm used.
+
